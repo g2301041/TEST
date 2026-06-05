@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>秋田県：天気＆安全対策情報「ベアウェザー」</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.min.css" />
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="loading">システム及び出没地図をロード中...</div>
+
+<div id="app" style="display:none;">
+  <div class="header">
+    <h1>秋田県：天気＆安全対策情報「ベアウェザー」</h1>
+    <div class="header-date" id="current-date">----年--月--日</div>
+  </div>
+  
+  <div class="dashboard">
+    <div class="weather-bear-alert" id="alert-bar">
+      <div class="w-card">
+        <div style="font-size: 28px; margin-right: 5px;" id="weather-icon">☁️</div>
+        <div class="w-info">
+          <div class="w-temp" id="weather-temp">--°C</div>
+          <div class="w-text" id="weather-text">読込中...</div>
+        </div>
+      </div>
+      <div class="alert-message">
+        <div class="alert-title">⚠️ 【熊災害アラート】 本日：警戒レベル「中」</div>
+        <div class="alert-desc" id="dynamic-alert-text">直近の出没状況を確認し、十分にご注意ください。</div>
+      </div>
+    </div>
+    
+    <div class="content-body">
+      <div class="sidebar">
+        <div class="weather-advice">
+          <h3>💡 本日の気象連動アドバイス</h3>
+          <p id="weather-advice-text">周囲の状況に注意し、山林付近や見通しの悪い場所に入る際は音の出るものを携帯してください。</p>
+        </div>
+        
+        <div class="weather-forecast-container">
+          <div class="weather-forecast-title">⏳ 3時間ごとの天気予報（直近24時間）</div>
+          <div class="weather-timeline" id="weather-timeline">
+            <div style="font-size:12px; color:#94a3b8; padding:5px;">予報データを読み込み中...</div>
+          </div>
+        </div>
+        
+        <div class="filter-box">
+          <div id="type-filters">
+            <div class="fbtn on" data-t="all">すべて</div>
+            <div class="fbtn" data-t="目撃">目撃</div>
+            <div class="fbtn" data-t="人身被害">人身</div>
+            <div class="fbtn" data-t="気象災害">災害</div>
+          </div>
+          <select class="select-ctrl" id="year-select">
+            <option value="all">すべての年</option>
+          </select>
+        </div>
+        
+        <div class="list-hdr" id="list-count">0件の情報</div>
+        <div class="list-scroll" id="sightings-list"></div>
+        
+        <div class="action-panel">
+          <button class="btn-primary" id="open-modal">➕ 情報を投稿する</button>
+          <button class="btn-export" id="export-json">💾 ファイルを手動保存</button>
+        </div>
+      </div>
+      
+      <div id="map"></div>
+    </div>
+  </div>
+
+  <div class="debug-panel" id="debug-panel">
+    <div class="debug-hdr" id="debug-toggle">
+      <span>🛠️ デバッグ・データ管理ツール</span>
+      <span id="debug-arrow">▲</span>
+    </div>
+    <div class="debug-body">
+      <div class="debug-row">
+        <button class="debug-btn" id="db-mock-bear">🐻 擬似熊データ挿入</button>
+        <button class="debug-btn" id="db-mock-disaster">🌧️ 擬似災害データ挿入</button>
+      </div>
+      <div class="debug-row">
+        <button class="debug-btn" id="db-refresh">🔄 画面再描画</button>
+        <button class="debug-btn danger" id="db-clear">⚠️ メモリ全クリア</button>
+      </div>
+      <div style="font-weight:bold;color:#f8fafc;margin-top:2px;">📋 動作ログ履歴:</div>
+      <div class="debug-console" id="debug-console"></div>
+      <div style="font-weight:bold;color:#f8fafc;">💎 現在の配列データ (プレビュー):</div>
+      <div class="debug-json-view" id="debug-json-view">[]</div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal-window">
+    <div class="modal-hdr">出没・災害情報の報告</div>
+    <div class="modal-body">
+      <div class="modal-left">
+        <div class="form-grp">
+          <label>情報種別</label>
+          <select id="f-type">
+            <option value="目撃">熊の目撃</option>
+            <option value="人身被害">熊の人身被害</option>
+            <option value="痕跡">熊の痕跡・その他</option>
+            <option value="気象災害">気象災害（大雨・冠水・土砂崩れ等）</option>
+          </select>
+        </div>
+        <div class="form-grp">
+          <label>市町村</label>
+          <select id="f-city">
+            <option value="">選択してください</option>
+            <option value="秋田市">秋田市</option><option value="能代市">能代市</option>
+            <option value="横手市">横手市</option><option value="大館市">大館市</option>
+            <option value="男鹿市">男鹿市</option><option value="湯沢市">湯沢市</option>
+            <option value="鹿角市">鹿角市</option><option value="由利本荘市">由利本荘市</option>
+            <option value="潟上市">潟上市</option><option value="大仙市">大仙市</option>
+            <option value="北秋田市">北秋田市</option><option value="にかほ市">にかほ市</option>
+            <option value="仙北市">仙北市</option>
+          </select>
+        </div>
+        <div class="form-grp">
+          <label>詳しい場所 ※地図クリックで自動取得</label>
+          <input type="text" id="f-loc" placeholder="地図をクリックすると自動入力されます">
+        </div>
+        <div class="form-grp">
+          <label>発生日時</label>
+          <input type="datetime-local" id="f-date">
+        </div>
+        <div class="form-grp">
+          <label>状況・詳細</label>
+          <textarea id="f-note" placeholder="熊の大きさや、道路の冠水状況などを入力してください"></textarea>
+        </div>
+      </div>
+      <div class="modal-right">
+        <label style="font-size:12px;font-weight:bold;color:#475569;">地図上で場所を指定 (必須)</label>
+        <div id="coord-info">地図をクリックして発生地点を指定してください</div>
+        <div id="mini-map"></div>
+      </div>
+    </div>
+    <div class="modal-ftr">
+      <button class="btn-sec" id="cancel-btn">キャンセル</button>
+      <button class="btn-submit" id="submit-btn">投稿を反映・自動保存</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
+<script src="app.js"></script>
+<script src="debug.js"></script>
+</body>
+</html>
