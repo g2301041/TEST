@@ -31,7 +31,7 @@ def init_db():
     cur.execute('''
         CREATE TABLE IF NOT EXISTS bear_archive (
             id SERIAL PRIMARY KEY,
-            archive_name TEXT NOT NULL,  # 例: "archive_20260619_10000"
+            archive_name TEXT NOT NULL,  -- 例: "archive_20260619_10000"
             json_records TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
