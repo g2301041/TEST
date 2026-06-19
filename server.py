@@ -161,6 +161,53 @@ def save_data():
         
     except Exception as e:
         return jsonify({"success": False, "message": f"エラー: {str(e)}"}), 500
-
+        
+# 🌟 【一時追加】10MBの data.json をデータベースへ強制インポートする裏コマンド
+@app.route('/api/force-import', methods=['GET'])
+def force_import():
+    try:
+        local_json_path = os.path.join(BASE_DIR, 'data.json')
+        if not os.path.exists(local_json_path):
+            return jsonify({"status": "error", "message": "サーバー上に data.json が見つかりません"}), 404
+            
+        with open(local_json_path, 'r', encoding='utf-8') as f:
+            raw_data = json.load(f)
+            
+        total_count = len(raw_data)
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # 既存の空データを一度完全に削除
+        cur.execute('DELETE FROM bear_data;')
+        cur.execute('DELETE FROM bear_archive;')
+        
+        # 1万件ごとに分割して保存するロジック
+        chunk_size = 9999
+        chunks = [raw_data[i:i + chunk_size] for i in range(0, len(raw_data), chunk_size)]
+        
+        # 最後の1ブロック以外はすべてアーカイブに放り込む
+        for i, chunk in enumerate(chunks[:-1]):
+            archive_name = f"archive_init_part{i+1}"
+            cur.execute(
+                'INSERT INTO bear_archive (archive_name, json_records) VALUES (%s, %s);',
+                (archive_name, json.dumps(chunk, ensure_ascii=False))
+            )
+            
+        # 最後のブロック（現行アクティブデータ）を通常テーブルに保存
+        cur.execute('INSERT INTO bear_data (json_records) VALUES (%s);', (json.dumps(chunks[-1], ensure_ascii=False),))
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return jsonify({
+            "status": "success", 
+            "message": f"総数 {total_count} 件のデータを正常にDBへ移行しました！",
+            "chunks_saved": len(chunks)
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+        
 if __name__ == '__main__':
     app.run(port=5000, debug=True)
