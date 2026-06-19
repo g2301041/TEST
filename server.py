@@ -14,11 +14,12 @@ def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
 
 # データベースの初期化
+# 🌟 修正版：起動時に余計なデータチェックや上書きをしない安全な初期化
 def init_db():
     conn = get_db_connection()
     cur = conn.cursor()
     
-    # 1. 現行アクティブデータ用のテーブル
+    # テーブルの作成だけを行う（データの中身には一切触らない）
     cur.execute('''
         CREATE TABLE IF NOT EXISTS bear_data (
             id SERIAL PRIMARY KEY,
@@ -27,7 +28,6 @@ def init_db():
         );
     ''')
     
-    # 2. 1万件を超えたときの退避用（アーカイブ）テーブル
     cur.execute('''
         CREATE TABLE IF NOT EXISTS bear_archive (
             id SERIAL PRIMARY KEY,
@@ -37,23 +37,11 @@ def init_db():
         );
     ''')
     
-    # 初回起動時のみ、データがなければ空の配列を入れておく
-    cur.execute('SELECT COUNT(*) FROM bear_data;')
-    if cur.fetchone()[0] == 0:
-        local_json_path = os.path.join(BASE_DIR, 'data.json')
-        initial_data = []
-        if os.path.exists(local_json_path):
-            try:
-                with open(local_json_path, 'r', encoding='utf-8') as f:
-                    initial_data = json.load(f)
-            except Exception:
-                pass
-        cur.execute('INSERT INTO bear_data (json_records) VALUES (%s);', (json.dumps(initial_data, ensure_ascii=False),))
-        
     conn.commit()
     cur.close()
     conn.close()
-
+    print("[INIT] データベースのテーブル確認が完了しました。")
+    
 init_db()
 
 @app.route('/')
