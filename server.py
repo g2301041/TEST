@@ -162,37 +162,61 @@ def save_data():
     except Exception as e:
         return jsonify({"success": False, "message": f"エラー: {str(e)}"}), 500
         
-# 🌟 【一時追加】10MBの data.json をデータベースへ強制インポートする裏コマンド
+# 🌟 【タイムアウト対策版】10MBの巨大データを分割して安全にインポートする裏コマンド
 @app.route('/api/force-import', methods=['GET'])
 def force_import():
     try:
+        # どのブロックを処理するかURLで指定できるようにする（例: ?page=1）
+        page = int(request.args.get('page', 1))
+        chunk_size = 3000 # 💥 1回の処理を3000件ずつに減らして軽快に処理します
+        
         local_json_path = os.path.join(BASE_DIR, 'data.json')
         if not os.path.exists(local_json_path):
-            return jsonify({"status": "error", "message": "サーバー上に data.json が見つかりません"}), 404
+            return jsonify({"status": "error", "message": "data.jsonが見つかりません"}), 404
             
         with open(local_json_path, 'r', encoding='utf-8') as f:
             raw_data = json.load(f)
             
         total_count = len(raw_data)
+        # 3000件ずつに小分けにする
+        chunks = [raw_data[i:i + chunk_size] for i in range(0, len(raw_data), chunk_size)]
+        total_pages = len(chunks)
+        
+        if page < 1 or page > total_pages:
+            return jsonify({"status": "error", "message": f"ページは 1 から {total_pages} の間で指定してください"}), 400
+            
+        current_chunk = chunks[page - 1]
         
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # 既存の空データを一度完全に削除
-        cur.execute('DELETE FROM bear_data;')
-        cur.execute('DELETE FROM bear_archive;')
-        
-        # 1万件ごとに分割して保存するロジック
-        chunk_size = 9999
-        chunks = [raw_data[i:i + chunk_size] for i in range(0, len(raw_data), chunk_size)]
-        
-        # 最後の1ブロック以外はすべてアーカイブに放り込む
-        for i, chunk in enumerate(chunks[:-1]):
-            archive_name = f"archive_init_part{i+1}"
+        # 最初のページ（page=1）の時だけ、古いDBのデータを完全にリセットする
+        if page == 1:
+            cur.execute('DELETE FROM bear_data;')
+            cur.execute('DELETE FROM bear_archive;')
+            
+        # 最後のページ（最新データ）以外はすべてアーカイブに保存
+        if page < total_pages:
+            archive_name = f"archive_init_part{page}"
             cur.execute(
                 'INSERT INTO bear_archive (archive_name, json_records) VALUES (%s, %s);',
-                (archive_name, json.dumps(chunk, ensure_ascii=False))
+                (archive_name, json.dumps(current_chunk, ensure_ascii=False))
             )
+        else:
+            # 最後のページ（現行データ用）を通常テーブルに保存
+            cur.execute('INSERT INTO bear_data (json_records) VALUES (%s);', (json.dumps(current_chunk, ensure_ascii=False),))
+            
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return jsonify({
+            "status": "success", 
+            "message": f"【ステップ {page} / {total_pages}】{len(current_chunk)} 件のデータ移行に成功！",
+            "next_url": f"/api/force-import?page={page + 1}" if page < total_pages else "全データのインポートが完了しました！"
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
             
         # 最後のブロック（現行アクティブデータ）を通常テーブルに保存
         cur.execute('INSERT INTO bear_data (json_records) VALUES (%s);', (json.dumps(chunks[-1], ensure_ascii=False),))
