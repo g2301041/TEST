@@ -338,45 +338,91 @@ function updateAlertBanner() {
 }
 
 function render() {
-  if (!map) return;
+  if (!map || !markers) return;
+
+  // ① マップ上の古いピンをすべてクリア
   markers.clearLayers();
+
+  // ② サイドバーのリスト要素をクリア
   const listEl = document.getElementById('sightings-list');
   listEl.innerHTML = '';
+  
   let count = 0;
 
-  CSV_DATA.forEach(d => {
+  // ------------------------------------------
+  // ⭐【新設】最新の投稿順（日付の新しい順）にソートする処理
+  // ------------------------------------------
+  // 元のデータを壊さないようシャローコピーを作成してからソートします
+  const sortedData = [...CSV_DATA].sort((a, b) => {
+    const dateAStr = a["目撃日時"] || a["発生日時"] || "1970/01/01 00:00";
+    const dateBStr = b["目撃日時"] || b["発生日時"] || "1970/01/01 00:00";
+    
+    // スラッシュやハイフンの表記揺れを統一して比較できるようにする
+    const timeA = new Date(dateAStr.replace(/-/g, '/')).getTime();
+    const timeB = new Date(dateBStr.replace(/-/g, '/')).getTime();
+    
+    // 降順（新しい順）に並び替える
+    return timeB - timeA;
+  });
+
+  // ------------------------------------------
+  // ③ ソート済みのデータをループして描画
+  // ------------------------------------------
+  sortedData.forEach(d => {
     if (!d) return;
+    
     const type = d["情報種別"] || "目撃";
     const dateTime = d["目撃日時"] || d["発生日時"] || "不明";
     
-    // フィルター判定
-    if (currentFilterType !== 'all' && !type.includes(currentFilterType)) return;
+    // ------------------------------------------
+    // 🔍 フィルタリング判定ロジックの最適化
+    // ------------------------------------------
+    if (currentFilterType !== 'all') {
+      // 「目撃・痕跡」ボタンが押されている時
+      if (currentFilterType === '目撃') {
+        if (!type.includes('目撃') && !type.includes('痕跡')) return;
+      }
+      // 「人身被害」ボタンが押されている時
+      else if (currentFilterType === '人身被害') {
+        if (!type.includes('人身被害')) return;
+      }
+    }
+    
     count++;
 
-    // 緯度経度のキーをDB仕様（x(緯度), y(経度)）および通常の緯度経度両方に対応
+    // 🗺️ 地図（マップ）へのサークルピン配置
     const latRaw = d["x(緯度)"] || d["緯度"];
     const lngRaw = d["y(経度)"] || d["経度"];
     const lat = parseFloat(latRaw); 
     const lng = parseFloat(lngRaw);
 
     if (!isNaN(lat) && !isNaN(lng)) {
-      const col = type.includes('人身') ? '#dc2626' : '#ea580c';
-      const m = L.circleMarker([lat, lng], { radius: 9, fillColor: col, color: '#fff', weight: 2, fillOpacity: 0.8 });
+      const col = type.includes('人身') ? '#dc2626' : (type.includes('目撃') ? '#ea580c' : '#64748b');
+      const m = L.circleMarker([lat, lng], { 
+        radius: 9, 
+        fillColor: col, 
+        color: '#fff', 
+        weight: 2, 
+        fillOpacity: 0.8 
+      });
       m.bindPopup(`<b>${type}</b><br>${dateTime}<br>${d["地番情報"] || ''}<br>${d["目撃時の状況"] || ''}`);
       markers.addLayer(m);
     }
 
+    // 📋 サイドバーのリストアイテム生成（最新順に並びます）
     const item = document.createElement('div');
     item.className = 'sitem';
     item.innerHTML = `
       <div class="sitem-content" onclick="if(!isNaN(${lat}) && !isNaN(${lng})) map.setView([${lat},${lng}], 14)">
         <div class="sitem-title">${d["地番情報"] || '秋田県内'}</div>
-        <div class="sitem-meta">${dateTime} | ${d["市町村"] || ''}</div>
+        <div class="sitem-meta"><strong style="color:#0f172a;">${dateTime}</strong> | ${d["市町村"] || ''}</div>
         <span class="type-tag tag-${type}">${type}</span>
       </div>
     `;
     listEl.appendChild(item);
   });
+
+  // カウンターの数字を更新
   document.getElementById('list-count').textContent = `${count} 件の情報`;
 }
 
