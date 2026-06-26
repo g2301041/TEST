@@ -120,8 +120,8 @@ def save_data():
             )
             new_data = [] # メインをリセット
 
-        # 💥 競合を避けるため、通常テーブルをクリアして最新配列を1件だけきれいに保存
-        cur.execute('TRUNCATE TABLE bear_data;')
+        # 💥 【修正箇所】TRUNCATE をやめ、一般権限でも動く DELETE に変更
+        cur.execute('DELETE FROM bear_data;')
         cur.execute('INSERT INTO bear_data (json_records, updated_at) VALUES (%s, %s);', 
                     (json.dumps(new_data, ensure_ascii=False), datetime.now()))
         
