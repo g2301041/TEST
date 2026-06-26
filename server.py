@@ -54,45 +54,52 @@ def send_static(path):
 
 
 # 2. データの読み込みAPI（過去5年分の目撃日時を正確に判定して合体）
+# ⭕ 【超安全・日付エラー対策版】データの読み込みAPI
 @app.route('/api/load', methods=['GET'])
 def load_data():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         
-        all_raw_records = []
-        
-        # ① 通常テーブルからデータを取得
+        # ① 通常テーブル（直近の投稿データ）を取得 ── 🌟ここにあるデータは5年フィルターを無視して100%絶対に表示する
         cur.execute('SELECT json_records FROM bear_data ORDER BY id DESC;')
-        rows = cur.fetchall()
-        for row in rows:
-            all_raw_records.extend(json.loads(row[0]))
+        active_rows = cur.fetchall()
+        new_posted_records = []
+        for row in active_rows:
+            new_posted_records.extend(json.loads(row[0]))
             
-        # ② アーカイブテーブルからデータを取得
+        # ② アーカイブテーブル（2万件の過去データ）を取得
         cur.execute('SELECT json_records FROM bear_archive;')
-        archives = cur.fetchall()
-        for archive in archives:
-            all_raw_records.extend(json.loads(archive[0]))
+        archive_rows = cur.fetchall()
+        old_archive_records = []
+        for row in archive_rows:
+            old_archive_records.extend(json.loads(row[0]))
             
         cur.close()
         conn.close()
 
-        # 📅 「目撃日時」を基準にした5年間のフィルタリング
+        # 📅 アーカイブデータ（古いデータ）に対してのみ「5年間のフィルタリング」を適用する
         filtered_data = []
         five_years_ago = datetime.now() - timedelta(days=5*365)
         
-        for item in all_raw_records:
-            if not item or "目撃日時" not in item:
+        for item in old_archive_records:
+            if not item or "目撃日時" not in item or not item["目撃日時"]:
                 continue
             try:
-                date_str = item["目撃日時"].split(" ")[0]
+                # 「/」や「-」など、どんな区切り文字でも日付を抽出できるように柔軟にパース
+                date_str = item["目撃日時"].replace('-', '/').split(" ")[0] # "2022/5/19" を取得
                 item_date = datetime.strptime(date_str, '%Y/%m/%d')
+                
                 if item_date >= five_years_ago:
                     filtered_data.append(item)
             except Exception:
-                filtered_data.append(item) # 解析エラーのデータは安全のため残す
-                
-        return jsonify(filtered_data)
+                # 判定エラーになった古いデータも、念のため消さずに残す（安全策）
+                filtered_data.append(item)
+        
+        # 🌟 「新しく投稿されたデータ」と「5年分に絞った過去データ」を合体させて画面に返す！
+        final_combined_data = new_posted_records + filtered_data
+        return jsonify(final_combined_data)
+        
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
