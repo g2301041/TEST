@@ -88,7 +88,9 @@ html, body {
 .sitem-title { font-weight: bold; font-size: 13px; color: #1e293b; margin-bottom: 4px; }
 .sitem-meta { font-size: 11px; color: #64748b; }
 .type-tag { display: inline-block; font-size: 10px; padding: 2px 6px; border-radius: 3px; font-weight: bold; color: #fff; margin-top: 4px; }
-.tag-熊の目撃 { background: #64748b; }
+.tag-目撃 { background: #eab308; color: #000; }
+.tag-痕跡 { background: #64748b; }
+.tag-人身被害 { background: #dc2626; }
 .tag-熊の人身被害 { background: #dc2626; }
 
 /* 🗺️ マップエリア */
@@ -167,7 +169,7 @@ html, body {
         <div class="sidebar-scroll-wrapper">
           <div class="weather-advice">
             <h3>💡 本日の気象連動アドバイス</h3>
-            <p id="weather-advice-text">周囲の状況に注意し、見通しの悪い場所に入る際は音の出るものを携帯してください。</p>
+            <p id="weather-advice-text">周囲状況に注意し、見通しの悪い場所に入る際は音の出るものを携帯してください。</p>
           </div>
           
           <div class="weather-forecast-container">
@@ -209,22 +211,7 @@ html, body {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
 
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-
-const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-
+<script>
 let CSV_DATA = [];
 let map = null, markers = null, radarLayer = null, userMarker = null;
 let currentFilterType = 'all';
@@ -232,7 +219,6 @@ let js_urls = [];
 let js_labels = [];
 let isRadarActive = false;
 let isBearActive = true;
-let lastWeatherCache = null;
 
 window.addEventListener('DOMContentLoaded', () => {
   const now = new Date();
@@ -241,14 +227,14 @@ window.addEventListener('DOMContentLoaded', () => {
   initMap();
   fetchJmaRadarTimestamps();
   loadOpenMeteoForecast();
-  syncFirebaseData();
+  loadFlaskDatabaseData(); // FirebaseからFlask(PostgreSQL)経由への読み込みに修正
 });
 
 function initMap() {
   document.getElementById('loading').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
   
-  const baseTile = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', { attribution: '国土地理院' });
+  const baseTile = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', { attribution: '国地理院' });
   map = L.map('map', { zoomControl: false, minZoom: 7, maxZoom: 18, layers: [baseTile] }).setView([39.65, 140.1], 8);
   L.control.zoom({ position: 'topright' }).addTo(map);
 
@@ -266,19 +252,22 @@ function initMap() {
   initEvents();
 }
 
-function syncFirebaseData() {
-  onSnapshot(collection(db, "bear_reports"), (snapshot) => {
-    CSV_DATA = [];
-    snapshot.forEach((doc) => {
-      let data = doc.data();
-      data.id = doc.id; 
-      CSV_DATA.push(data);
+// 🌐 Flaskのバックエンド（PostgreSQL）からデータを安全に読み込む処理
+function loadFlaskDatabaseData() {
+  fetch('data.json') // server.py側で自動的にload_data()にルーティングされます
+    .then(res => {
+      if (!res.ok) throw new Error("データベースからのデータ取得に失敗しました");
+      return res.json();
+    })
+    .then(bearData => {
+      CSV_DATA = Array.isArray(bearData) ? bearData : [];
+      render();
+      updateAlertBanner();
+    })
+    .catch(err => {
+      console.error("データ同期エラー: ", err);
+      document.getElementById('dynamic-alert-text').textContent = "データの同期に失敗しました。再読み込みしてください。";
     });
-    render();
-    updateAlertBanner();
-  }, (error) => {
-    console.error("Firebaseの読み込みエラー: ", error);
-  });
 }
 
 function loadOpenMeteoForecast() {
@@ -296,7 +285,6 @@ function loadOpenMeteoForecast() {
 
       document.getElementById('weather-icon').textContent = wIcon;
       document.getElementById('weather-text').textContent = `秋田市: ${wText}`;
-      lastWeatherCache = wIcon;
 
       updateAlertBanner();
 
@@ -331,7 +319,7 @@ function updateAlertBanner() {
     descEl.textContent = "付近でクマ本体の目撃、あるいは新しい足跡やフンなどの痕跡が発見されています。";
     adviceEl.textContent = "🐾【警戒レベル中】クマが近くに潜んでいる可能性があります。朝夕の行動を避け、鈴やラジオなど音の出るものを必ず携帯してください。";
   } else {
-    const hasDanger = CSV_DATA.some(d => d["情報種別"] === "熊の人身被害");
+    const hasDanger = CSV_DATA.some(d => d && (String(d["情報種別"]).includes("人身被害")));
     if (hasDanger) {
       alertBar.style.background = "linear-gradient(135deg, #7f1d1d 0%, #dc2626 100%)";
       titleEl.textContent = "🔴 🚨 クマ危険度【極めて高い・人身被害報告あり】";
@@ -357,24 +345,33 @@ function render() {
   let count = 0;
 
   CSV_DATA.forEach(d => {
-    const type = d["情報種別"];
+    if (!d) return;
+    const type = d["情報種別"] || "目撃";
+    const dateTime = d["目撃日時"] || d["発生日時"] || "不明";
+    
+    // フィルター判定
     if (currentFilterType !== 'all' && !type.includes(currentFilterType)) return;
     count++;
 
-    const lat = parseFloat(d["緯度"]); const lng = parseFloat(d["経度"]);
+    // 緯度経度のキーをDB仕様（x(緯度), y(経度)）および通常の緯度経度両方に対応
+    const latRaw = d["x(緯度)"] || d["緯度"];
+    const lngRaw = d["y(経度)"] || d["経度"];
+    const lat = parseFloat(latRaw); 
+    const lng = parseFloat(lngRaw);
+
     if (!isNaN(lat) && !isNaN(lng)) {
-      const col = type.includes('人身') ? '#dc2626' : '#64748b';
+      const col = type.includes('人身') ? '#dc2626' : '#ea580c';
       const m = L.circleMarker([lat, lng], { radius: 9, fillColor: col, color: '#fff', weight: 2, fillOpacity: 0.8 });
-      m.bindPopup(`<b>${type}</b><br>${d["発生日時"]}<br>${d["地番情報"]}`);
+      m.bindPopup(`<b>${type}</b><br>${dateTime}<br>${d["地番情報"] || ''}<br>${d["目撃時の状況"] || ''}`);
       markers.addLayer(m);
     }
 
     const item = document.createElement('div');
     item.className = 'sitem';
     item.innerHTML = `
-      <div class="sitem-content" onclick="map.setView([${lat},${lng}], 14)">
+      <div class="sitem-content" onclick="if(!isNaN(${lat}) && !isNaN(${lng})) map.setView([${lat},${lng}], 14)">
         <div class="sitem-title">${d["地番情報"] || '秋田県内'}</div>
-        <div class="sitem-meta">${d["発生日時"]} | ${d["市町村"]}</div>
+        <div class="sitem-meta">${dateTime} | ${d["市町村"] || ''}</div>
         <span class="type-tag tag-${type}">${type}</span>
       </div>
     `;
@@ -386,7 +383,6 @@ function render() {
 async function fetchJmaRadarTimestamps() {
   try {
     const ts = Date.now();
-    // 💡 URLと「種類（1時間/15時間）」をペアにして確実に管理（Nなしのパターンも追加）
     const targetApis = [
       { prod: "nowc", url: `https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json?_=${ts}` },
       { prod: "nowc", url: `https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json?_=${ts}` },
@@ -394,7 +390,7 @@ async function fetchJmaRadarTimestamps() {
       { prod: "prca", url: `https://www.jma.go.jp/bosai/jmatile/data/prca/targetTimes_N1.json?_=${ts}` },
       { prod: "prca", url: `https://www.jma.go.jp/bosai/jmatile/data/prca/targetTimes_N2.json?_=${ts}` },
       { prod: "prca", url: `https://www.jma.go.jp/bosai/jmatile/data/prca/targetTimes_N3.json?_=${ts}` },
-      { prod: "prca", url: `https://www.jma.go.jp/bosai/jmatile/data/prca/targetTimes.json?_=${ts}` } // ← Nがないパターンを救済
+      { prod: "prca", url: `https://www.jma.go.jp/bosai/jmatile/data/prca/targetTimes.json?_=${ts}` }
     ];
 
     const responses = await Promise.all(targetApis.map(t => fetch(t.url).catch(() => null)));
@@ -405,11 +401,10 @@ async function fetchJmaRadarTimestamps() {
       if (!res || !res.ok) continue;
       
       const data = await res.json();
-      const prod = targetApis[i].prod; // 💡 配列から直接「nowc」か「prca」かを取得してズレを完全防止
+      const prod = targetApis[i].prod;
 
       data.forEach(t => {
         if (t.basetime && t.validtime) {
-          // 全く同じ時間のデータがある場合は、新しいbasetime（発表時刻）のものを優先
           if (!allTimes[t.validtime] || t.basetime > allTimes[t.validtime].basetime) {
             t.prod = prod;
             t.element = t.elements ? t.elements[0] : (prod === "nowc" ? "hrpns" : "prca");
@@ -437,7 +432,6 @@ async function fetchJmaRadarTimestamps() {
       
       const diffMins = Math.round((validDateJst - now) / 60000);
 
-      // 15分以上前の過去データは捨てる
       if (diffMins < -15) return;
 
       const timeStr = `${String(validDateJst.getHours()).padStart(2,'0')}:${String(validDateJst.getMinutes()).padStart(2,'0')}`;
@@ -467,6 +461,7 @@ async function fetchJmaRadarTimestamps() {
 
   } catch (e) {
     console.error("雨雲データの取得に失敗しました。", e);
+    fallbackRadar();
   }
 }
   
@@ -500,19 +495,15 @@ function updateRadarLayer() {
   }).addTo(map);
 }
 
-// 🚨 【完全自然音化】ピピピ、プププといった電子音を完全廃止。
-// 物理的な摩擦音（ホワイトノイズ）を数学的に合成し、一発だけの強烈な「爆竹・銃声の炸裂音」を再現。
 function playBearAlarm() {
   try {
     var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     var now = audioCtx.currentTime;
     
-    // --- 1. 火薬の破裂音（ザザーッという非電子的な衝撃摩擦音を生成） ---
-    var bufferSize = audioCtx.sampleRate * 1.5; // 約1.5秒分の音の塊
+    var bufferSize = audioCtx.sampleRate * 1.5;
     var buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
     var data = buffer.getChannelData(0);
     
-    // 完全な乱数（ホワイトノイズ）を流し込み、人工的な電子音感を全カット
     for (var i = 0; i < bufferSize; i++) {
       data[i] = Math.random() * 2 - 1;
     }
@@ -522,35 +513,27 @@ function playBearAlarm() {
     
     var noiseGain = audioCtx.createGain();
     
-    // ⚡【超突発アタック】タップした瞬間に音量を物理限界（1.5）まで一瞬で垂直に引き上げる
     noiseGain.gain.setValueAtTime(0.0, now);
     noiseGain.gain.linearRampToValueAtTime(1.5, now + 0.001); 
-    
-    // 爆竹の火花が散った後、1.2秒かけて「シャー……」と自然に消え去る減衰曲線
     noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
     
-    // --- 2. 腹に響く衝撃波（ドスンという大口径の低音） ---
     var subOsc = audioCtx.createOscillator();
     var subGain = audioCtx.createGain();
     
     subOsc.type = 'sine';
-    // 炸裂の瞬間は70Hz（地鳴り）からスタートし、0.08秒で一気に30Hzまで急降下させてドン！という重低音の壁を作る
     subOsc.frequency.setValueAtTime(70, now);
     subOsc.frequency.exponentialRampToValueAtTime(30, now + 0.08);
     
-    // 低音の衝撃波も一瞬でMAXになり、0.3秒でサッと消える（切れ味を鋭くして突発感を強調）
     subGain.gain.setValueAtTime(0.0, now);
     subGain.gain.linearRampToValueAtTime(1.8, now + 0.001);
     subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
     
-    // 各ノードをスピーカーへ接続
     noiseNode.connect(noiseGain);
     noiseGain.connect(audioCtx.destination);
     
     subOsc.connect(subGain);
     subGain.connect(audioCtx.destination);
     
-    // 同時に着火して1発の大爆発を起こす
     noiseNode.start(now);
     subOsc.start(now);
     
