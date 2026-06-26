@@ -113,3 +113,49 @@ html, body {
 .btn-sec { padding: 8px 16px; background: #e2e8f0; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
 .btn-submit { padding: 8px 20px; background: #27ae60; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
 #loading { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #fff; z-index: 9999; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #555; }
+
+/* ==========================================
+   📱 スマートフォン（モバイル）向けのスクロール修正
+   ========================================== */
+@media (max-width: 768px) {
+  /* アプリ全体の縦スクロールを許可する */
+  html, body, #app {
+    overflow-y: auto !important;
+    height: auto !important;
+  }
+
+  /* ダッシュボード全体の固定を解除 */
+  .dashboard {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* メインコンテンツ（マップとサイドバー）の並びを縦にする */
+  .main-content {
+    flex-direction: column !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* 地図の高さが潰れないように固定 */
+  .map-container {
+    height: 400px !important; /* スマホ時の地図の高さ */
+    flex: none !important;
+  }
+
+  /* ⚠️ 最重要：サイドバー（目撃リスト）を縦スクロール可能にする */
+  .sidebar {
+    width: 100% !important;
+    height: auto !important;
+    max-height: 500px; /* リスト全体の最大高さ */
+    box-shadow: none !important;
+  }
+
+  /* リストの中身をスクロールさせる */
+  #sightings-list {
+    max-height: 400px; /* ここを突き抜けたデータがスクロール可能になります */
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch; /* iPhoneでのスクロールを滑らかにする */
+    padding-bottom: 20px;
+  }
+}
